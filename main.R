@@ -46,11 +46,11 @@ if (interactive()) {
                     box(width = 10, solidHeader = TRUE, status = "primary",
                         actionButton("viewLibrary", "Просмотреть библиотеку Gutenberg"),
                         DTOutput("libraryTable", height = "300px")),
-                    box(title = "Проект Gutenberg", width = 2, solidHeader = TRUE, status = "primary", collapsible = TRUE, 
-                        HTML("<p>Проект \"Гутенберг\"— это общественная некоммерческая инициатива, которая занимается созданием и распространением цифровой коллекции произведений, находящихся в общественном достоянии.</p>
-                  <p>Проект считается старейшей в мире электронной библиотекой. Большинство работ было оцифровано волонтёрами и доступно для свободного скачивания.</p>
-                  <p>На 2021 год в коллекции проекта более 60 000 книг.</p>")
-                    ), br(), br()
+                    box(title = "Загрузка текста", width = 2, solidHeader = TRUE, status = "primary",
+                        uiOutput("displayText"),
+                        actionButton("data_loading_info1", "1"),
+                        actionButton("data_loading_info2", "2")), 
+                    br(), br()
                   ),
                   fluidRow(
                     box(width = 12, solidHeader = TRUE, status = "primary",
@@ -123,7 +123,33 @@ if (interactive()) {
     
     
     server <- function(input, output, session) {
+  #################### ЗАГРУЗКА ДАННЫХ ####################
+  ## ТЕКСТОВЫЕ БЛОКИ
+      #блок 1
+      text_data <- c(
+        "<p>Для работы предлагается загрузить несколько книг из свободной библиотеки Gutenberg.</p>
+    <p>Все тексты доступны для загрузки на английском языке</p>",
+        "<p>Проект \"Гутенберг\"— это общественная некоммерческая инициатива, которая занимается созданием и распространением цифровой коллекции произведений, находящихся в общественном достоянии.</p>
+                  <p>Проект считается старейшей в мире электронной библиотекой. Большинство работ было оцифровано волонтёрами и доступно для свободного скачивания.</p>
+                  <p>На 2021 год в коллекции проекта более 60 000 книг.</p>"
+      )
       
+      current_text <- reactiveValues(text = text_data[1])
+      
+      observeEvent(input$data_loading_info1, {
+        current_text$text <- text_data[1]
+      })
+      
+      observeEvent(input$data_loading_info2, {
+        current_text$text <- text_data[2]
+      })
+      
+      output$displayText <- renderUI({
+        HTML(current_text$text)
+      })
+      
+      ##ЛОГИКА ДАННЫХ
+      #Загрузка библиотеки
       libraryTable <- eventReactive(input$viewLibrary, {
         tryCatch({
           id <- showNotification("Загрузка библиотеки", type = "message", duration = 5)
@@ -142,16 +168,15 @@ if (interactive()) {
         libraryData
       }, server = FALSE, options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       
-      
+      #Закачка книг
       book <- eventReactive(input$downloadBooks, {
         req(input$bookIDs)
         book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
         id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
-        # Загружаем книги
         books <<- tryCatch({
           gutenberg_download(book_ids, meta_fields = "title", mirror="http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/")
         }, error = function(e) {
-          NULL  # В случае ошибки возвращаем NULL
+          NULL
         })
         removeNotification(id)
         
@@ -190,7 +215,7 @@ if (interactive()) {
         updateTabItems(session, "sidebar", "text_tokenization") 
       })
       
-      #################################################################################################################
+      #################### ТОКЕНИЗАЦИЯ ДАННЫХ ####################
       
       # функция word_counts_unique
       word_counts_unique <- function(data) {
@@ -305,7 +330,7 @@ if (interactive()) {
       })
       
       
-      ###############################################################################################################
+      #################### МАТРИЦА ДОКУМЕНТ-ТЕРМИН ####################
       
       
       
