@@ -1,11 +1,13 @@
 library(shiny)
 library(shinydashboard)
+
 library(gutenbergr)
 library(tidytext) 
 library(tidyr) 
 library(dplyr)
 library(stringr)
 library(DT)
+library(ggplot2)
 
 
 ui <- dashboardPage(
@@ -64,7 +66,31 @@ ui <- dashboardPage(
               fluidRow(column(12, div(actionButton(inputId="next1", label="Далее"), style="float:left")))
               
       ),
-      tabItem(tabName = "text_tokenization", h1("Токенизация текста")),
+      tabItem(tabName = "text_tokenization", h1("Токенизация текста"), 
+              fluidRow(
+                box(title = "Инструкция", status = "primary", solidHeader = TRUE, 
+                    HTML("<p>1. Нажмите 'Разделить текст на слова' для разделения текста на слова и анализа.</p>
+                    <p>2. Изучите график распределения слов по главам.</p>
+                    <p>3. Обратите внимание на частоту стоп-слов.</p>")
+                ),
+                box(DTOutput("word_counts"),
+                    selectInput("document", "Выберите документ:", choices = ""),
+                    sliderInput("num_words", "Выберите количество популярных слов:", min = 1, max = 20, value = 5),
+                    plotOutput("word_freq_plot"), width = 12)
+              ),
+              actionButton("start_analysis", "Разделить на слова"),
+              fluidRow(
+                box(title = "Чистка от стоп-слов", status = "warning", solidHeader = TRUE,
+                    "Нажмите кнопку ниже, чтобы очистить текст от стоп-слов и повторить анализ."
+                ),
+                actionButton("clean_stop_words", "Очистить стоп слова"),
+                box(title = "График после очистки", status = "primary", 
+                    plotOutput("clean_word_freq_plot"), width = 12),
+                box(title = "Таблица частот после очистки", status = "primary", 
+                    DTOutput("clean_word_counts"), width = 12)
+              )
+              
+      ),
       tabItem(tabName = "dtm", h1("Матрица терминов документа")),
       tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
       tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
@@ -78,6 +104,7 @@ ui <- dashboardPage(
 
 
 server <- function(input, output, session) {
+  
   libraryTable <- eventReactive(input$viewLibrary, {
     tryCatch({
       id <- showNotification("Загрузка библиотеки", type = "message", duration = 5)
@@ -97,12 +124,12 @@ server <- function(input, output, session) {
   }, server = FALSE, options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
   
   
-  books <- eventReactive(input$downloadBooks, {
+  book <- eventReactive(input$downloadBooks, {
     req(input$bookIDs)
     book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
     id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
     # Загружаем книги
-    books <- tryCatch({
+    books <<- tryCatch({
       gutenberg_download(book_ids, meta_fields = "title", mirror="http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/")
     }, error = function(e) {
       NULL  # В случае ошибки возвращаем NULL
@@ -120,19 +147,19 @@ server <- function(input, output, session) {
   })
   
   output$booksTable <- renderDT({
-    req(books())
+    req(book())
     datatable(books()[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
   }, server = FALSE)
   
   splitTextIntoChapters <- eventReactive(input$splitChapters, {
     req(input$chapterSplitter)
-    books() %>%
-      mutate(chapter = cumsum(str_detect(text, regex(input$chapterSplitter, ignore_case = input$ignoreCase)))) %>%
-      filter(chapter > 0) %>%
-      group_by(title) %>%
-      mutate(chapter = row_number()) %>%
+    books %>% group_by(title) %>%
+      mutate(chapter = cumsum(str_detect(
+        text, regex("^chapter ", ignore_case = TRUE)
+      ))) %>%
       ungroup() %>%
-      select(title, chapter, text)
+      filter(chapter > 0) %>%
+      unite(document, title, chapter)
   })
   
   output$chapterTable <- renderDT({
@@ -142,6 +169,85 @@ server <- function(input, output, session) {
   
   observeEvent(input$next1, {
     updateTabItems(session, "sidebar", "text_tokenization") 
+  })
+  
+  #################################################################################################################
+  
+  # Ваша функция word_counts_unique
+  word_counts_unique <- function(data) {
+    word_counts <- data %>%
+      count(document, word, sort = TRUE) %>%
+      ungroup()
+    
+    return(word_counts)
+  }
+  
+  
+  
+  # Анализ текста и график частот слов до очистки
+  observeEvent(input$start_analysis, {
+    by_chapter_word <<- splitTextIntoChapters() %>%
+      unnest_tokens(word, text)
+    
+    word_counts <- by_chapter_word %>%
+      count(document, word, sort = TRUE) %>%
+      arrange(document, desc(n)) %>%
+      ungroup()
+    
+    output$word_counts <- renderDT({
+      datatable(word_counts)
+    }, options = list(pageLength = 5))
+    
+    # Создание списка уникальных названий документов
+    unique_documents <- unique(by_chapter_word$document)
+    
+    # Устанавливаем список уникальных документов в selectInput
+    updateSelectInput(session, "document", choices = unique_documents)
+  })
+  
+  
+  # Отображение графика
+  output$word_freq_plot <- renderPlot({
+    
+    word_counts_data <- reactive({
+      # Фильтрация данных по выбранному документу
+      filtered_data <- by_chapter_word %>%
+        filter(document == input$document)
+      # Получение списка уникальных слов
+      word_counts_unique(filtered_data)
+    })
+    
+    # Получение выбранного количества популярных слов
+    top_words <- head(word_counts_data()$word, input$num_words)
+    
+    # Фильтрация данных для выбранных слов
+    selected_data <- word_counts_data() %>%
+      filter(word %in% top_words)
+    
+    # Построение графика
+    ggplot(selected_data, aes(x = reorder(word, n), y = n)) +
+      geom_col() +
+      theme_minimal() +
+      labs(x = "Слово", y = "Частота", title = paste("Топ", input$num_words, "слов для", input$document))
+  })
+  
+  
+  # Очистка от стоп-слов и анализ после очистки
+  observeEvent(input$clean_stop_words, {
+    by_chapter_word <- splitTextIntoChapters() %>%
+      unnest_tokens(word, text)
+    
+    word_counts_cleaned <- by_chapter_word %>%
+      anti_join(stop_words) %>%
+      count(document, word, sort = TRUE) %>%
+      ungroup()
+    
+    cleaned_data(word_counts_cleaned)  # сохраняем очищенные данные для дальнейшего использования
+    
+    
+    output$clean_word_counts <- renderDT({
+      datatable(word_counts_cleaned)
+    }, options = list(pageLength = 5))
   })
   
   
