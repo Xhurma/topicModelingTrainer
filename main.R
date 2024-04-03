@@ -14,8 +14,8 @@ ui <- navbarPage(
              )
            )
   ),
-  tabPanel("Модели", 
-           h1("Содержимое вкладки 2")
+  tabPanel("Практика", 
+           h1("Содержимое")
   ),
   tabPanel("Проверка знаний", 
            fluidRow(
