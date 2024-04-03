@@ -9,6 +9,7 @@ if (interactive()) {
   library(stringr)
   library(DT)
   library(ggplot2)
+  library(plotly)
   
   shinyApp(
     ui = dashboardPage(
@@ -104,26 +105,36 @@ if (interactive()) {
                       title = "Что такое матрица терминов документа (DTM)?",
                       status = "info",
                       solidHeader = TRUE,
-                      width = 6,
+                      width = 4, height = "300px",
                       tags$ul(
-                        tags$li("DTM - это матрица, в которой строки представляют термины (слова), а столбцы - документы."),
+                        tags$li("Это матрица, в которой строки представляют термины (слова), а столбцы - документы."),
                         tags$li("Элементы матрицы показывают частоту появления каждого термина в каждом документе."),
                         tags$li("DTM широко используется в анализе текста для моделирования документов и извлечения признаков.")
                       )
                     ),
                     box(
-                      title = "Преимущества DTM",
+                      title = "Чем удобна DTM?",
                       status = "success",
                       solidHeader = TRUE,
-                      width = 6,
+                      width = 4, height = "300px",
                       tags$ul(
-                        tags$li("Учитывает частоту слов в документах, что позволяет анализировать и сравнивать тексты."),
+                        tags$li("Показывает частоту слов в каждом документе"),
                         tags$li("Позволяет использовать методы машинного обучения для анализа текста и классификации документов."),
-                        tags$li("Может использоваться для выявления ключевых слов и терминов в тексте.")
+                        tags$li("Эффективна для обработки компьютером, т.к. операции с матрицами производятся быстро.")
                       )
                     ),
-                    fluidRow(column(12, div(actionButton("to_dtm", "Показать Матрицу Документ - Термин")), style="float:left")), br(),
+                    box(
+                      title = "Чем неудобна DTM?",
+                      status = "danger",
+                      solidHeader = TRUE,
+                      width = 4, height = "300px",
+                      tags$ul(
+                        tags$li("Низкая наглядность - матрица может состоять из тысяч строк и столбцов, вывести такую матрицу на экран и сохранить информативность практически невозможно"),
+                        tags$li("Неудобна для человека - матрица является разряженной и содержит свыше 90% нулей, что делает её громоздкой для обработки человеком"),
+                      )
+                    )
                   ),
+                  fluidRow(column(12, div(actionButton("to_dtm", "Показать Матрицу Документ - Термин")), style="float:left")), br(),
                   fluidRow(
                     box(
                       title = "Обычная таблица",
@@ -138,17 +149,26 @@ if (interactive()) {
                       status = "warning",
                       solidHeader = TRUE,
                       DTOutput("dtm_table")
-                    )
-                  ),
+                    )),
+                  fluidRow(
+                    box(
+                      title = "Информация о матрице",
+                      width = 6,
+                      status = "primary",
+                      solidHeader = TRUE,
+                      verbatimTextOutput("dtm_content")
+                      ),
+                    box(
+                      width = 6,
+                      status = "primary",
+                      solidHeader = TRUE),
+                    ),
+                    DTOutput("dtm_table2"),
                   fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
+                  ),
                   
                   
                   
-                  
-                  
-                  
-          ),
-          
           tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
           tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
@@ -376,7 +396,7 @@ if (interactive()) {
       observeEvent(input$to_dtm, {
         
         output$normal_table <- renderDT({
-          datatable(cleaned_data)
+          datatable(clean_word_count)
         }, options = list(pageLength = 5))
         
         chapters_dtm <- clean_word_count %>%
@@ -385,8 +405,27 @@ if (interactive()) {
         chapters_df <- as.data.frame(as.matrix(chapters_dtm))
         
         output$dtm_table <- renderDT({
-          datatable(chapters_df)
-        }, options = list(pageLength = 5))
+          subset_matrix <- chapters_df[1:10, 1:10]
+          datatable(subset_matrix, options = list(pageLength = 10, scrollX = TRUE))
+        })
+        
+        chapters_df2 <- tidy(chapters_dtm)
+        
+        output$dtm_table2 <- renderDT({
+          subset_matrix <- chapters_df[1:10, 1:10]
+          datatable(chapters_df2, options = list(pageLength = 10, scrollX = TRUE))
+        })
+        
+        
+        
+        
+        output$dtm_content <- renderPrint({
+          print(chapters_dtm)
+        })
+        
+
+        
+
       
       })
       
