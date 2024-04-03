@@ -15,7 +15,7 @@ if (interactive()) {
       header = dashboardHeader(title = "TopicModeling", titleWidth = 270),
       sidebar = dashboardSidebar(id = "sidebar",
                                  width = 270,
-                                 sidebarMenu(id = "sidebar",
+                                 sidebarMenu(id = "sidebarMenu",
                                              menuItem("Введение", tabName = "theory", icon = icon("book")),
                                              
                                              menuItem("Занятие 1", tabName = "practice1", icon = icon("pencil"), 
@@ -98,7 +98,49 @@ if (interactive()) {
                   fluidRow(column(12, div(actionButton(inputId="next2", label="Далее"), style="float:left")))
                   
           ),
-          tabItem(tabName = "dtm", h1("Матрица терминов документа")
+          tabItem(tabName = "dtm", h1("Матрица терминов документа"),
+                  fluidRow(
+                    box(
+                      title = "Что такое матрица терминов документа (DTM)?",
+                      status = "info",
+                      solidHeader = TRUE,
+                      width = 6,
+                      tags$ul(
+                        tags$li("DTM - это матрица, в которой строки представляют термины (слова), а столбцы - документы."),
+                        tags$li("Элементы матрицы показывают частоту появления каждого термина в каждом документе."),
+                        tags$li("DTM широко используется в анализе текста для моделирования документов и извлечения признаков.")
+                      )
+                    ),
+                    box(
+                      title = "Преимущества DTM",
+                      status = "success",
+                      solidHeader = TRUE,
+                      width = 6,
+                      tags$ul(
+                        tags$li("Учитывает частоту слов в документах, что позволяет анализировать и сравнивать тексты."),
+                        tags$li("Позволяет использовать методы машинного обучения для анализа текста и классификации документов."),
+                        tags$li("Может использоваться для выявления ключевых слов и терминов в тексте.")
+                      )
+                    ),
+                    fluidRow(column(12, div(actionButton("to_dtm", "Показать Матрицу Документ - Термин")), style="float:left")), br(),
+                  ),
+                  fluidRow(
+                    box(
+                      title = "Обычная таблица",
+                      width = 6,
+                      status = "primary",
+                      solidHeader = TRUE,
+                      DTOutput("normal_table")
+                    ),
+                    box(
+                      title = "Document-Term Matrix",
+                      width = 6,
+                      status = "warning",
+                      solidHeader = TRUE,
+                      DTOutput("dtm_table")
+                    )
+                  ),
+                  fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
                   
                   
                   
@@ -106,6 +148,7 @@ if (interactive()) {
                   
                   
           ),
+          
           tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
           tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
@@ -117,9 +160,8 @@ if (interactive()) {
       footer = dashboardFooter(
         left = tags$a(href="https://github.com/Xhurma/rshiny", "Проект на GitHub"),
         right = "НГТУ НЭТИ"
-      ),
+      )
     ),
-    
     
     
     server <- function(input, output, session) {
@@ -212,7 +254,7 @@ if (interactive()) {
       }, server = FALSE)
       
       observeEvent(input$next1, {
-        updateTabItems(session, "sidebar", "text_tokenization") 
+        updateTabItems(session, "sidebarMenu", selected = "text_tokenization") 
       })
       
       #################### ТОКЕНИЗАЦИЯ ДАННЫХ ####################
@@ -282,7 +324,7 @@ if (interactive()) {
         cleaned_data <<- by_chapter_word %>%
           anti_join(stop_words)
         
-        clean_word_count <- cleaned_data %>%
+        clean_word_count <<- cleaned_data %>%
           count(document, word, sort = TRUE) %>%
           arrange(document, desc(n)) %>%
           ungroup()
@@ -326,11 +368,31 @@ if (interactive()) {
       
       
       observeEvent(input$next2, {
-        updateTabItems(session, "sidebar", "dtm") 
+        updateTabItems(session, "sidebarMenu", "dtm") 
       })
       
       
       #################### МАТРИЦА ДОКУМЕНТ-ТЕРМИН ####################
+      observeEvent(input$to_dtm, {
+        
+        output$normal_table <- renderDT({
+          datatable(cleaned_data)
+        }, options = list(pageLength = 5))
+        
+        chapters_dtm <- clean_word_count %>%
+          cast_dtm(document, word, n)
+        
+        chapters_df <- as.data.frame(as.matrix(chapters_dtm))
+        
+        output$dtm_table <- renderDT({
+          datatable(chapters_df)
+        }, options = list(pageLength = 5))
+      
+      })
+      
+      observeEvent(input$next3, {
+        updateTabItems(session, "sidebarMenu", "quiz1") 
+      })
       
       
       
