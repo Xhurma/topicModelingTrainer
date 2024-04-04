@@ -44,6 +44,18 @@ if (interactive()) {
           tabItem(tabName = "lesson1", h1("Первичная обработка данных")),
           tabItem(tabName = "data_loading", h1("Загрузка и осмотр данных"),
                   fluidRow(
+                    box(width = 6, solidHeader = TRUE, status = "primary",
+                        p("Для работы вам предлагается любые 3 книги из следующего списка: "),
+                        tags$ul(
+                          tags$li("Sea Wolf"),
+                          tags$li("The Mysterious Island"),
+                          tags$li("")
+                        ),
+                        p("Загрузите библиотеку книг и попробуйте найти id этих книг с помощью кнопки поиска")
+                        
+                    ), br(), br()
+                  ),
+                  fluidRow(
                     box(width = 10, solidHeader = TRUE, status = "primary",
                         actionButton("viewLibrary", "Просмотреть библиотеку Gutenberg"),
                         DTOutput("libraryTable", height = "300px")),
@@ -56,6 +68,15 @@ if (interactive()) {
                   fluidRow(
                     box(width = 12, solidHeader = TRUE, status = "primary",
                         textInput("bookIDs", "Введите ID книг для загрузки (например, 1268, 33111, 1074):"),
+                        p("Если возникла ошибка, попробуйте сменить зеркало"),
+                        selectInput("changeMirror", "Выберите зеркало:", choices = c("http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/",
+                                                                                     "http://eremita.di.uminho.pt/gutenberg/",
+                                                                                     "http://mirror.csclub.uwaterloo.ca/gutenberg/",
+                                                                                     "https://gutenberg.nabasny.com/",
+                                                                                     "https://www.gutenberg.org/dirs/",
+                                                                                     "https://mirror2.sandyriver.net/pub/gutenberg"
+                        ), 
+                        selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
                         actionButton("downloadBooks", "Скачать книги"),
                         DTOutput("booksTable", height = "300px"),
                         textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
@@ -157,18 +178,18 @@ if (interactive()) {
                       status = "primary",
                       solidHeader = TRUE,
                       verbatimTextOutput("dtm_content")
-                      ),
+                    ),
                     box(
                       width = 6,
                       status = "primary",
                       solidHeader = TRUE),
-                    ),
-                    DTOutput("dtm_table2"),
-                  fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
                   ),
-                  
-                  
-                  
+                  DTOutput("dtm_table2"),
+                  fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
+          ),
+          
+          
+          
           tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
           tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
@@ -185,8 +206,8 @@ if (interactive()) {
     
     
     server <- function(input, output, session) {
-  #################### ЗАГРУЗКА ДАННЫХ ####################
-  ## ТЕКСТОВЫЕ БЛОКИ
+      #################### ЗАГРУЗКА ДАННЫХ ####################
+      ## ТЕКСТОВЫЕ БЛОКИ
       #блок 1
       text_data <- c(
         "<p>Для работы предлагается загрузить несколько книг из свободной библиотеки Gutenberg.</p>
@@ -230,13 +251,14 @@ if (interactive()) {
         libraryData
       }, server = FALSE, options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       
+      
       #Закачка книг
       book <- eventReactive(input$downloadBooks, {
-        req(input$bookIDs)
+        req(input$bookIDs, input$changeMirror)
         book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
         id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
         books <<- tryCatch({
-          gutenberg_download(book_ids, meta_fields = "title", mirror="http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/")
+          gutenberg_download(book_ids, meta_fields = "title", mirror = input$changeMirror)
         }, error = function(e) {
           NULL
         })
@@ -423,10 +445,10 @@ if (interactive()) {
           print(chapters_dtm)
         })
         
-
         
-
-      
+        
+        
+        
       })
       
       observeEvent(input$next3, {
