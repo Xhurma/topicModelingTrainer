@@ -78,15 +78,17 @@ if (interactive()) {
                         ), 
                         selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
                         actionButton("downloadBooks", "Скачать книги"),
-                        verbatimTextOutput("bookText"),
-                        DTOutput("booksTable", height = "300px"),
+                        DTOutput("booksTable"),
+                        htmlOutput("bookText"),
                         textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
                         checkboxInput("ignoreCase", "Игнорировать регистр", value = TRUE),
                         actionButton("splitChapters", "Разделить на главы"),
                         DTOutput("chapterTable")  
-                    )
+                    ),
+                    
                     
                   ),
+                  
                   fluidRow(column(12, div(actionButton(inputId="next1", label="Далее"), style="float:left")))
                   
           ),
@@ -254,39 +256,44 @@ if (interactive()) {
       
       
       #Закачка книг
-      book <- eventReactive(input$downloadBooks, {
+      books <- eventReactive(input$downloadBooks, {
         req(input$bookIDs, input$changeMirror)
         book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
         id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
-        books <- tryCatch({
+        booksData <- tryCatch({
           gutenberg_download(book_ids, meta_fields = "title", mirror = input$changeMirror)
         }, error = function(e) {
           NULL
         })
         removeNotification(id)
         # Проверяем, успешно ли были загружены данные
-        if (is.null(books)) {
+        if (is.null(booksData)) {
           showNotification("Ошибка при загрузке книг.", type = "error")
         }
-        return(books)
+        return(booksData)
       })
       
-      output$bookText <- renderText({
-        req(book())
-        book_text <- paste(book()$text, collapse = " ")
-        return(book_text)
-      })
       
       output$booksTable <- renderDT({
-        req(book())
-        datatable(book()[, c("text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
+        req(books())
+        datatable(books()[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       }, server = FALSE)
+      
+      
+      output$bookText <- renderUI({
+        req(books())
+        book_text <- paste(books()$text, collapse = "<br>")
+        div(style = "overflow-y: scroll; max-height: 300px; font-size: 12px; font-family: 'Times New Roman', Times, serif;", 
+            HTML(book_text)
+        )
+      })
+      
       
       
       
       splitTextIntoChapters <- eventReactive(input$splitChapters, {
         req(input$chapterSplitter)
-        books %>% group_by(title) %>%
+        books() %>% group_by(title) %>%
           mutate(chapter = cumsum(str_detect(
             text, regex("^chapter ", ignore_case = TRUE)
           ))) %>%
