@@ -78,6 +78,7 @@ if (interactive()) {
                         ), 
                         selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
                         actionButton("downloadBooks", "Скачать книги"),
+                        verbatimTextOutput("bookText"),
                         DTOutput("booksTable", height = "300px"),
                         textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
                         checkboxInput("ignoreCase", "Игнорировать регистр", value = TRUE),
@@ -257,27 +258,31 @@ if (interactive()) {
         req(input$bookIDs, input$changeMirror)
         book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
         id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
-        books <<- tryCatch({
+        books <- tryCatch({
           gutenberg_download(book_ids, meta_fields = "title", mirror = input$changeMirror)
         }, error = function(e) {
           NULL
         })
         removeNotification(id)
-        
         # Проверяем, успешно ли были загружены данные
         if (is.null(books)) {
           showNotification("Ошибка при загрузке книг.", type = "error")
-        } else {
-          output$booksTable <- renderDT({
-            books
-          }, options = list(pageLength = 5))
         }
+        return(books)
+      })
+      
+      output$bookText <- renderText({
+        req(book())
+        book_text <- paste(book()$text, collapse = " ")
+        return(book_text)
       })
       
       output$booksTable <- renderDT({
         req(book())
-        datatable(books()[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
+        datatable(book()[, c("text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       }, server = FALSE)
+      
+      
       
       splitTextIntoChapters <- eventReactive(input$splitChapters, {
         req(input$chapterSplitter)
