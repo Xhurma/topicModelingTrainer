@@ -83,11 +83,9 @@ if (interactive()) {
                         htmlOutput("bookText")
                     ),
                     box(
-                      textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
-                      checkboxInput("ignoreCase", "Игнорировать регистр", value = TRUE),
-                      actionButton("splitChapters", "Разделить на главы"), br(),
-                      selectInput("selectedChapter", "Выберите главу", choices = ""), br(),
-                      DTOutput("chapterTable"),
+                      uiOutput("splitButtons"),
+                      actionButton("splitChapters", "Разделить на главы"),
+                      selectInput("selectedChapter", "Выберите главу", choices = ""),
                       htmlOutput("chapterText")
                     ), br(),
                     
@@ -304,16 +302,94 @@ if (interactive()) {
       
       
       
-      splitTextIntoChapters <- eventReactive(input$splitChapters, {
-        req(input$chapterSplitter)
-        books() %>% group_by(title) %>%
-          mutate(chapter = cumsum(str_detect(
-            text, regex("^chapter ", ignore_case = TRUE)
-          ))) %>%
-          ungroup() %>%
-          filter(chapter > 0) %>%
-          unite(document, title, chapter)
+      
+      
+      
+      
+      
+      
+      output$splitButtons <- renderUI({
+        req(input$selectedTitle)
+        titles <- unique(books()$title)
+        buttons <- lapply(titles, function(title) {
+          tagList(
+            textInput(paste0("splitChapters_", title), paste("", title)),
+            HTML("<br>"),
+          )
+        })
+        do.call(tagList, buttons)
       })
+      
+      splitTextIntoChapters <- eventReactive(input$splitChapters, {
+        
+        req(input$selectedTitle)
+        titles <- unique(books()$title)
+        
+        if (length(titles) == 0) {
+          showNotification("Нет доступных книг", type = "error")
+          return(NULL)
+        }
+        
+        # Проверка наличия введенных значений в каждом textInput
+        input_complete <- all(sapply(titles, function(title) {
+          input_val <- input[[paste0("splitChapters_", title)]]
+          !is.null(input_val) && input_val != ""
+        }))
+        
+        if (!input_complete) {
+          # Если не все значения введены, выдаем сообщение об ошибке
+          showNotification("Заполните все поля", type = "error")
+          return(NULL)
+        }
+        
+        # Разделение каждой книги на главы
+        chapters <- lapply(titles, function(temp) {
+          book <- books() %>%
+            filter(title == temp)
+          
+          book_chapters <- book %>%
+            mutate(chapter = cumsum(str_detect(
+              text, regex(input[[paste0("splitChapters_", temp)]], ignore_case = TRUE)
+            ))) %>%
+            filter(chapter > 0) %>%
+            unite(document, title, chapter)
+          
+          return(book_chapters)
+        })
+        
+        # Объединение глав из всех книг в один объект
+        combined_chapters <- do.call(rbind, chapters)
+        
+        return(combined_chapters)
+      }) 
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
       
       observe({
         req(splitTextIntoChapters())
