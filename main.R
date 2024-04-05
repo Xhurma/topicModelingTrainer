@@ -78,13 +78,18 @@ if (interactive()) {
                         ), 
                         selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
                         actionButton("downloadBooks", "Скачать книги"),
-                        DTOutput("booksTable"),
-                        htmlOutput("bookText"),
-                        textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
-                        checkboxInput("ignoreCase", "Игнорировать регистр", value = TRUE),
-                        actionButton("splitChapters", "Разделить на главы"),
-                        DTOutput("chapterTable")  
+                        selectInput("selectedTitle", "Выберите книгу", choices = ""), br(),
+                        DTOutput("booksTable"), br(),
+                        htmlOutput("bookText")
                     ),
+                    box(
+                      textInput("chapterSplitter", "Разделить на главы:", value = "^Chapter "),
+                      checkboxInput("ignoreCase", "Игнорировать регистр", value = TRUE),
+                      actionButton("splitChapters", "Разделить на главы"), br(),
+                      selectInput("selectedChapter", "Выберите главу", choices = ""), br(),
+                      DTOutput("chapterTable"),
+                      htmlOutput("chapterText")
+                    ), br(),
                     
                     
                   ),
@@ -273,16 +278,24 @@ if (interactive()) {
         return(booksData)
       })
       
+      observe({
+        req(books())
+        titles <- unique(books()$title)
+        updateSelectInput(session, "selectedTitle", choices = titles)
+      })
+      
       
       output$booksTable <- renderDT({
-        req(books())
-        datatable(books()[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
+        req(books(), input$selectedTitle)
+        bookSelected <- books()[books()$title == input$selectedTitle, ]
+        datatable(bookSelected[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       }, server = FALSE)
       
       
       output$bookText <- renderUI({
-        req(books())
-        book_text <- paste(books()$text, collapse = "<br>")
+        req(books(), input$selectedTitle)
+        bookSelected <- books()[books()$title == input$selectedTitle, ]
+        book_text <- paste(bookSelected$text, collapse = "<br>")
         div(style = "overflow-y: scroll; max-height: 300px; font-size: 12px; font-family: 'Times New Roman', Times, serif;", 
             HTML(book_text)
         )
@@ -302,10 +315,25 @@ if (interactive()) {
           unite(document, title, chapter)
       })
       
+      observe({
+        req(splitTextIntoChapters())
+        chapters <- unique(splitTextIntoChapters()$document)
+        updateSelectInput(session, "selectedChapter", choices = chapters)
+      })
+      
       output$chapterTable <- renderDT({
         req(splitTextIntoChapters())
-        datatable(splitTextIntoChapters(), options = list(scrollX = TRUE, scrollY = "200px", pageLength = 5), rownames = FALSE)
+        datatable(splitTextIntoChapters()[, "text"], options = list(scrollX = TRUE, scrollY = "200px", pageLength = 5), rownames = FALSE)
       }, server = FALSE)
+      
+      output$chapterText <- renderUI({
+        req(splitTextIntoChapters(), input$selectedTitle)
+        chapterSelected <- splitTextIntoChapters()[splitTextIntoChapters()$document == input$selectedChapter, ]
+        chapter_text <- paste(chapterSelected$text, collapse = "<br>")
+        div(style = "overflow-y: scroll; max-height: 300px; font-size: 12px; font-family: 'Times New Roman', Times, serif;", 
+            HTML(chapter_text)
+        )
+      })
       
       observeEvent(input$next1, {
         updateTabItems(session, "sidebarMenu", selected = "text_tokenization") 
