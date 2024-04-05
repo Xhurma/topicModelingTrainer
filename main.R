@@ -320,6 +320,7 @@ if (interactive()) {
         do.call(tagList, buttons)
       })
       
+      
       splitTextIntoChapters <- eventReactive(input$splitChapters, {
         
         req(input$selectedTitle)
@@ -360,50 +361,15 @@ if (interactive()) {
         # Объединение глав из всех книг в один объект
         combined_chapters <- do.call(rbind, chapters)
         
+        chaptersList <- unique(combined_chapters$document)
+        updateSelectInput(session, "selectedChapter", choices = chaptersList)
+        
         return(combined_chapters)
       }) 
       
       
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      observe({
-        req(splitTextIntoChapters())
-        chapters <- unique(splitTextIntoChapters()$document)
-        updateSelectInput(session, "selectedChapter", choices = chapters)
-      })
-      
-      output$chapterTable <- renderDT({
-        req(splitTextIntoChapters())
-        datatable(splitTextIntoChapters()[, "text"], options = list(scrollX = TRUE, scrollY = "200px", pageLength = 5), rownames = FALSE)
-      }, server = FALSE)
-      
       output$chapterText <- renderUI({
-        req(splitTextIntoChapters(), input$selectedTitle)
+        req(splitTextIntoChapters(), input$selectedChapter)
         chapterSelected <- splitTextIntoChapters()[splitTextIntoChapters()$document == input$selectedChapter, ]
         chapter_text <- paste(chapterSelected$text, collapse = "<br>")
         div(style = "overflow-y: scroll; max-height: 300px; font-size: 12px; font-family: 'Times New Roman', Times, serif;", 
