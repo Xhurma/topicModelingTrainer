@@ -3,6 +3,7 @@ if (interactive()) {
   library(shinydashboard)
   library(shinydashboardPlus)
   library(gutenbergr)
+  library(topicmodels)
   library(tidytext) 
   library(tidyr) 
   library(dplyr)
@@ -161,7 +162,7 @@ if (interactive()) {
                       )
                     )
                   ),
-                  fluidRow(column(12, div(actionButton("to_dtm", "Показать Матрицу Документ - Термин")), style="float:left")), br(),
+                  fluidRow(column(12, div(actionButton("toDtm", "Показать Матрицу Документ - Термин")), style="float:left")), br(),
                   fluidRow(
                     box(
                       title = "Обычная таблица",
@@ -190,13 +191,33 @@ if (interactive()) {
                       status = "primary",
                       solidHeader = TRUE),
                   ),
-                  DTOutput("dtm_table2"),
+                  
                   fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
           ),
-          
-          
-          
           tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
+          tabItem(tabName = "lda_model",
+                  fluidRow(
+                    box(
+                      title = "Настройки LDA Анализа",
+                      width = 6,
+                      solidHeader = TRUE,
+                      numericInput("ldaTopicsCount", "Количество тем:", value = 3),
+                      numericInput("ldaSeed", "Seed:", value = 123),
+                      actionButton("makeLda", "Создать модель LDA")
+                    )
+                  ),
+                  fluidRow(
+                    box(
+                      title = "Результаты LDA Анализа",
+                      width = 6,
+                      solidHeader = TRUE,
+                      DTOutput("chaptersProb"),
+                      DTOutput("topTermsDf"),
+                      plotOutput("topTermsPlot")
+                    )
+                  ),
+                  fluidRow(column(12, div(actionButton(inputId="next5", label="Перейти к результатам LDA"), style="float:left")))
+          ),
           tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
           tabItem(tabName = "help", h1("Помощь"), p("Здесь будет страница помощи.")),
@@ -298,14 +319,6 @@ if (interactive()) {
             HTML(book_text)
         )
       })
-      
-      
-      
-      
-      
-      
-      
-      
       
       
       output$splitButtons <- renderUI({
@@ -497,45 +510,78 @@ if (interactive()) {
       
       
       #################### МАТРИЦА ДОКУМЕНТ-ТЕРМИН ####################
-      observeEvent(input$to_dtm, {
-        
-        output$normal_table <- renderDT({
-          datatable(clean_word_count)
-        }, options = list(pageLength = 5))
-        
-        chapters_dtm <- clean_word_count %>%
+      chaptersDtm <- eventReactive(input$toDtm, {
+        dtm <- clean_word_count %>%
           cast_dtm(document, word, n)
-        
-        chapters_df <- as.data.frame(as.matrix(chapters_dtm))
-        
-        output$dtm_table <- renderDT({
-          subset_matrix <- chapters_df[1:10, 1:10]
-          datatable(subset_matrix, options = list(pageLength = 10, scrollX = TRUE))
-        })
-        
-        chapters_df2 <- tidy(chapters_dtm)
-        
-        output$dtm_table2 <- renderDT({
-          subset_matrix <- chapters_df[1:10, 1:10]
-          datatable(chapters_df2, options = list(pageLength = 10, scrollX = TRUE))
-        })
-        
-        
-        
-        
-        output$dtm_content <- renderPrint({
-          print(chapters_dtm)
-        })
-        
-        
-        
-        
-        
+        return(dtm)
       })
       
-      observeEvent(input$next3, {
-        updateTabItems(session, "sidebarMenu", "quiz1") 
+      output$normal_table <- renderDT({
+        req(chaptersDtm())
+        datatable(clean_word_count, options = list(pageLength = 5))
       })
+      
+      output$dtm_table <- renderDT({
+        req(chaptersDtm())
+        chapters_df <- as.data.frame(as.matrix(chaptersDtm()))
+        subset_matrix <- chapters_df[1:10, 1:10]
+        datatable(subset_matrix, options = list(pageLength = 10, scrollX = TRUE))
+      })
+      
+      output$dtm_content <- renderPrint({
+        req(chaptersDtm())
+        print(chaptersDtm())
+      })
+      
+      
+      #################### МОДЕЛЬ LDA ####################
+      
+      ldaChapters <- eventReactive(input$makeLda, {
+        req(chaptersDtm(), input$ldaTopicsCount, input$ldaSeed)
+        chapters_lda <- topicmodels::LDA(chaptersDtm(), k = input$ldaTopicsCount, control = list(seed = input$ldaSeed))
+        return(chapters_lda)
+      })
+      
+      chapterTopics <- eventReactive(input$makeLda, {
+        req(ldaChapters())
+        tidy(ldaChapters(), matrix = "beta")
+      })
+      
+      output$chaptersProb <- renderDT({
+        req(chapterTopics())
+        datatable(chapterTopics())
+      }, options = list(pageLength = 5))
+      
+      
+      topTerms <- reactive({
+        req(chapterTopics())
+        top_terms <- chapterTopics() %>%
+          group_by(topic) %>%
+          top_n(7, beta) %>%
+          ungroup() %>%
+          arrange(topic, -beta)
+        return(top_terms)
+      })
+      
+      output$topTermsDf <- renderDT({
+        req(topTerms())
+        datatable(topTerms())
+      }, options = list(pageLength = 5))
+      
+      
+      output$topTermsPlot <- renderPlot({
+        req(topTerms())
+        topTerms() %>%
+          mutate(term = reorder_within(term, beta, topic)) %>%
+          ggplot(aes(beta, term, fill = factor(topic))) +
+          geom_col(show.legend = FALSE) +
+          facet_wrap(~ topic, scales = "free") +
+          scale_y_reordered()
+      })
+      
+      
+      
+      
       
       
       
