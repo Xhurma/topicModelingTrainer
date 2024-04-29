@@ -12,6 +12,10 @@ if (interactive()) {
   library(DT)
   library(ggplot2)
   library(plotly)
+  library(lubridate)
+  library(telegram.bot)
+  
+  source("quizFunc.R")
   
   shinyApp(
     ui = dashboardPage(
@@ -195,7 +199,13 @@ if (interactive()) {
                   )
                   
           ),
-          tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
+          tabItem(tabName = "quiz", 
+                  fluidRow(column(12, 
+                                  h3("Тест по тематическому моделированию текстов:"), 
+                                  uiOutput("quizList"), hr(),
+                                  
+                  ))
+          ),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
           tabItem(tabName = "help", h1("Помощь"), p("Здесь будет страница помощи.")),
           tabItem(tabName = "feedback", h1("Отзыв"), p("Здесь будет страница отзыва."))
@@ -210,13 +220,27 @@ if (interactive()) {
     
     
     server <- function(input, output, session) {
+      
       #################### ЗАГРУЗКА ДАННЫХ ####################
       output$dataUploadUi <- renderUI({
         req(input$dataDownloadType)
         if (input$dataDownloadType == "Загрузить свой файл") {
           tagList(
             fileInput("fileInput", "Выберите текстовые файлы", multiple = TRUE),
-            DTOutput("contents")
+            fluidRow(
+              box(width = 12, solidHeader = TRUE, status = "primary",
+                  selectInput("selectedTitle", "Выберите книгу", choices = ""), br(),
+                  DTOutput("booksTable"), br(),
+                  htmlOutput("bookText")
+              ),
+              box(
+                uiOutput("splitButtons"),
+                actionButton("splitChapters", "Разделить на главы"),
+                selectInput("selectedChapter", "Выберите главу", choices = ""),
+                htmlOutput("chapterText")
+              ), br(),
+            )
+            
           )
         } else {
           tagList(
@@ -267,34 +291,9 @@ if (interactive()) {
               ), br(),
             )
           )
-          
-          
-          
         }
       })
       
-      
-      
-      # Чтение текстовых файлов и загрузка в датафрейм
-      data <- reactive({
-        req(input$fileInput)
-        file_paths <- input$fileInput$datapath
-        filenames <- input$fileInput$name
-        lines_list <- lapply(file_paths, readLines)
-        lines_flat <- unlist(lines_list)
-        filenames_rep <- rep(filenames, lengths(lines_list))  # Создаем вектор с названиями файлов для каждой строки
-        
-        data.frame(
-          title = filenames_rep,
-          text = lines_flat,
-          stringsAsFactors = FALSE
-        )
-      })
-      
-      
-      output$contents <- renderDT({
-        datatable(as.data.frame(data()))
-      })
       
       
       ## ТЕКСТОВЫЕ БЛОКИ
@@ -343,21 +342,39 @@ if (interactive()) {
       
       
       #Закачка книг
-      books <- eventReactive(input$downloadBooks, {
-        req(input$bookIDs, input$changeMirror)
-        book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
-        id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
-        booksData <- tryCatch({
-          gutenberg_download(book_ids, meta_fields = "title", mirror = input$changeMirror)
-        }, error = function(e) {
-          NULL
-        })
-        removeNotification(id)
-        # Проверяем, успешно ли были загружены данные
-        if (is.null(booksData)) {
-          showNotification("Ошибка при загрузке книг.", type = "error")
+      books <- reactive({
+        if (input$dataDownloadType == "Загрузить свой файл") {
+          req(input$fileInput)
+          file_paths <- input$fileInput$datapath
+          filenames <- input$fileInput$name
+          lines_list <- lapply(file_paths, readLines)
+          lines_flat <- unlist(lines_list)
+          filenames_rep <- rep(filenames, lengths(lines_list))  # Создаем вектор с названиями файлов для каждой строки
+          
+          booksData <- data.frame(
+            title = filenames_rep,
+            text = lines_flat,
+            stringsAsFactors = FALSE
+          )
+          return(booksData)
+          
+        } else {
+          req(input$downloadBooks, input$bookIDs, input$changeMirror)
+          book_ids <- as.numeric(unlist(strsplit(input$bookIDs, ",")))
+          id <- showNotification("Загрузка книг...", type = "message", duration = NULL)
+          booksData <- tryCatch({
+            gutenberg_download(book_ids, meta_fields = "title", mirror = input$changeMirror)
+          }, error = function(e) {
+            NULL
+          })
+          removeNotification(id)
+          # Проверяем, успешно ли были загружены данные
+          if (is.null(booksData)) {
+            showNotification("Ошибка при загрузке книг.", type = "error")
+          }
+          return(booksData)
         }
-        return(booksData)
+        
       })
       
       #Обновление списка названий загруженных книг
@@ -769,6 +786,150 @@ if (interactive()) {
       }, options = list(pageLength = 5))
       
       #################### Экзамен ####################
+      # Список вопросов с ответами
+      questions <- list(
+        list(question = "Какая функция используется для создания вектора в R?",
+             answers = c("vector()", "c()", "list()", "array()"),
+             correctAnswer = "vector()"),
+        list(question = "Как добавить элемент в вектор в R?",
+             answers = c("append()", "push()", "concat()", "combine()"),
+             correctAnswer = "push()")
+      )
+      
+      #Токен бота
+      botToken <- "6164749454:AAHbX0AlQYi4f6iHIclnUrlSJV3KSL1lLJg"
+      #Список ответов пользователя
+      selectedAnswers <- rep(NA, length(questions))
+      #Число верных ответов пользователя
+      userScore <- 0
+      #Флаг завершённости тестирования
+      testDone <- reactiveVal(FALSE)
+      
+      
+      #Логика работы таймера 
+      timer <- reactiveVal(1800)
+      timerIsOn <- reactiveVal(FALSE)
+      
+      observe({
+        invalidateLater(1000, session)
+        isolate({
+          if (timerIsOn()) {
+            timer(timer() - 1)
+            
+            if (timer() < 1) {
+              timerIsOn(FALSE)
+              selectedAnswers <<- saveUserAnswers(questions, input)
+              userScore <<- calculateUserScore(selectedAnswers, questions, userScore) 
+              showModal(modalDialog(   
+                title = "Время вышло!",
+                "Ваши ответы были сохранены."
+              ))
+              testDone(TRUE)
+              sendEndMessage(botToken, input$teacherId, input$studentName, userScore, userResults())
+            }
+          }
+        })
+      })
+      
+      #Вывод таймера на экран
+      output$timeleft <- renderText({
+        paste("Оставшееся время ", seconds_to_period(timer()))
+      })
+      
+      
+      #Обработка кнопки "Начать тест"
+      observeEvent(input$start, {
+        
+        # Получаем имя студента и логин преподавателя из введенного текста
+        teacherId <- input$teacherId
+        studentName <- input$studentName
+        
+        # Проверяем, что пользователь ввел своё имя
+        if (studentName == "") {
+          showModal(modalDialog(
+            title = "Ошибка",
+            "Пожалуйста, введите своё имя"
+          ))
+          return(NULL)
+        }
+        
+        # Проверяем, что пользователь ввел логин преподавателя
+        if (teacherId == "") {
+          showModal(modalDialog(
+            title = "Ошибка",
+            "Пожалуйста, введите логин преподавателя в Телеграме."
+          ))
+          return(NULL)
+        }
+        
+        #Отправляем сообщение преподователю о начале теста
+        sendStartMessage(botToken, teacherId, studentName)
+        
+        #Включаем таймер
+        timerIsOn(TRUE)
+        
+      })
+      
+      
+      
+      # Обработка кнопки "Отправить ответы"
+      observeEvent(input$sendAnswers, {
+        selectedAnswers <<- saveUserAnswers(questions, input)
+        userScore <<- calculateUserScore(selectedAnswers, questions, userScore)
+        timerIsOn(FALSE)
+        testDone(TRUE)
+        sendEndMessage(botToken, input$teacherId, input$studentName, userScore, userResults())
+      })
+      
+      
+      #Обработка условной отрисовки интерфеса тестирования
+      observeEvent(timerIsOn(), {
+        if (!timerIsOn()  && testDone()) {
+          output$quizList <- renderUI({
+            renderQuizResult(userScore)
+          })
+        } else if (timerIsOn() && !testDone()) {
+          output$quizList <- renderUI({
+            renderQuiz(questions)
+          })
+        } else {
+          output$quizList <- renderUI({
+            renderQuizStart()
+          })
+        }
+      })
+      
+      #Обработка кнопки скачивания ответов пользователя
+      output$download_btn <- downloadHandler(
+        filename = function() {
+          paste("stats", Sys.Date(), ".csv", sep = "")
+        },
+        content = function(file) {
+          write.csv(userResults(), file, fileEncoding = "UTF-8")
+        }
+      )
+      
+      #Отрисовка таблицы с ответами пользователя
+      output$userResult <- renderDT({
+        datatable(userResults())
+      })
+      
+      #Создание таблицы с ответами пользователя
+      userResults <- reactive({
+        req(testDone())
+        # Создание списка из ответов пользователя
+        userResponses <- lapply(seq_along(questions), function(i) {
+          data.frame(
+            Вопрос = questions[[i]]$question,
+            ОтветПользователя = selectedAnswers[[i]],
+            ПравильныйОтвет = questions[[i]]$correctAnswer,
+            stringsAsFactors = FALSE
+          )
+        })
+        # Преобразование списка в датафрейм
+        userResponses <- do.call(rbind, userResponses)
+        return(userResponses)
+      })
       
       
     }
