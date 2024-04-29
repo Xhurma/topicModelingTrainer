@@ -797,7 +797,7 @@ if (interactive()) {
       )
       
       #Токен бота
-      botToken <- "6164749454:AAHbX0AlQYi4f6iHIclnUrlSJV3KSL1lLJg"
+      botToken <- ""
       #Список ответов пользователя
       selectedAnswers <- rep(NA, length(questions))
       #Число верных ответов пользователя
