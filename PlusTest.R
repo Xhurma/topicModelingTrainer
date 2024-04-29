@@ -1,6 +1,5 @@
 if (interactive()) {
   library(shiny)
-  library(shinyWidgets)
   library(shinydashboard)
   library(shinydashboardPlus)
   library(gutenbergr)
@@ -45,14 +44,54 @@ if (interactive()) {
           tabItem(tabName = "practice1", h1("Содержимое практики")),
           tabItem(tabName = "lesson1", h1("Первичная обработка данных")),
           tabItem(tabName = "data_loading", h1("Загрузка и осмотр данных"),
-                  radioGroupButtons(
-                    inputId = "dataDownloadType",
-                    label = "Выберите способ загрузки данных:", 
-                    choices = c("Загрузить свой файл", "Загрузить из сервиса Gutenberg"),
-                    status = "primary"
+                  fluidRow(
+                    box(width = 6, solidHeader = TRUE, status = "primary",
+                        p("Для работы вам предлагается любые 3 книги из следующего списка: "),
+                        tags$ul(
+                          tags$li("Sea Wolf"),
+                          tags$li("The Mysterious Island"),
+                          tags$li("The Origin of the Family, Private Property and the State")
+                        ),
+                        p("Загрузите библиотеку книг и попробуйте найти id этих книг с помощью кнопки поиска")
+                        
+                    ), br(), br()
                   ),
-                  uiOutput("dataUploadUi"),
-                  
+                  fluidRow(
+                    box(width = 10, solidHeader = TRUE, status = "primary",
+                        actionButton("viewLibrary", "Просмотреть библиотеку Gutenberg"),
+                        DTOutput("libraryTable", height = "300px")),
+                    box(title = "Загрузка текста", width = 2, solidHeader = TRUE, status = "primary",
+                        uiOutput("displayText"),
+                        actionButton("data_loading_info1", "1"),
+                        actionButton("data_loading_info2", "2")), 
+                    br(), br()
+                  ),
+                  fluidRow(
+                    box(width = 12, solidHeader = TRUE, status = "primary",
+                        textInput("bookIDs", "Введите ID книг для загрузки (например, 1268, 33111, 1074):"),
+                        p("Если возникла ошибка, попробуйте сменить зеркало"),
+                        selectInput("changeMirror", "Выберите зеркало:", choices = c("http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/",
+                                                                                     "http://eremita.di.uminho.pt/gutenberg/",
+                                                                                     "http://mirror.csclub.uwaterloo.ca/gutenberg/",
+                                                                                     "https://gutenberg.nabasny.com/",
+                                                                                     "https://www.gutenberg.org/dirs/",
+                                                                                     "https://mirror2.sandyriver.net/pub/gutenberg"
+                        ), 
+                        selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
+                        actionButton("downloadBooks", "Скачать книги"),
+                        selectInput("selectedTitle", "Выберите книгу", choices = ""), br(),
+                        DTOutput("booksTable"), br(),
+                        htmlOutput("bookText")
+                    ),
+                    box(
+                      uiOutput("splitButtons"),
+                      actionButton("splitChapters", "Разделить на главы"),
+                      selectInput("selectedChapter", "Выберите главу", choices = ""),
+                      htmlOutput("chapterText")
+                    ), br(),
+                    
+                    
+                  ),
                   
                   fluidRow(column(12, div(actionButton(inputId="next1", label="Далее"), style="float:left")))
                   
@@ -152,7 +191,7 @@ if (interactive()) {
                       status = "primary",
                       solidHeader = TRUE),
                   ),
-                  
+
                   fluidRow(column(12, div(actionButton(inputId="next3", label="Перейти к проверке знаний"), style="float:left")))
           ),
           tabItem(tabName = "quiz1", h1("Проверка знаний 1")),
@@ -185,7 +224,7 @@ if (interactive()) {
                     box(title = "График Бокса-Вискера", status = "warning", solidHeader = TRUE, collapsible = TRUE, plotOutput("boxViskerPlot")),
                     box(title = "Классификация глав", status = "info", solidHeader = TRUE, collapsible = TRUE, DTOutput("chapterClassificationDf"))
                   )
-          ),
+                  ),
           tabItem(tabName = "classification_errors", 
                   fluidRow(
                     box(title = "Неверно классифицированные главы", status = "danger", solidHeader = TRUE, collapsible = TRUE, DTOutput("chapterErrorClassificationDf")),
@@ -194,7 +233,7 @@ if (interactive()) {
                     box(title = "Неверно классифицированные слова", status = "primary", solidHeader = TRUE, collapsible = TRUE, DTOutput("wrongWordsDf"))
                   )
                   
-          ),
+                  ),
           tabItem(tabName = "quiz", fluidRow(column(12, h3("Тест по языку R:"), uiOutput("questions"), hr(), actionButton("submit", "Отправить ответы")))),
           tabItem(tabName = "stats", fluidRow(column(12, h3("Статистика верных ответов:"), tableOutput("stats")))),
           tabItem(tabName = "help", h1("Помощь"), p("Здесь будет страница помощи.")),
@@ -211,92 +250,6 @@ if (interactive()) {
     
     server <- function(input, output, session) {
       #################### ЗАГРУЗКА ДАННЫХ ####################
-      output$dataUploadUi <- renderUI({
-        req(input$dataDownloadType)
-        if (input$dataDownloadType == "Загрузить свой файл") {
-          tagList(
-            fileInput("fileInput", "Выберите текстовые файлы", multiple = TRUE),
-            DTOutput("contents")
-          )
-        } else {
-          tagList(
-            fluidRow(
-              box(width = 6, solidHeader = TRUE, status = "primary",
-                  p("Для работы вам предлагается любые 3 книги из следующего списка: "),
-                  tags$ul(
-                    tags$li("Sea Wolf"),
-                    tags$li("The Mysterious Island"),
-                    tags$li("The Origin of the Family, Private Property and the State")
-                  ),
-                  p("Загрузите библиотеку книг и попробуйте найти id этих книг с помощью кнопки поиска")
-                  
-              ), br(), br()
-            ),
-            fluidRow(
-              box(width = 10, solidHeader = TRUE, status = "primary",
-                  actionButton("viewLibrary", "Просмотреть библиотеку Gutenberg"),
-                  DTOutput("libraryTable", height = "300px")),
-              box(title = "Загрузка текста", width = 2, solidHeader = TRUE, status = "primary",
-                  uiOutput("displayText"),
-                  actionButton("data_loading_info1", "1"),
-                  actionButton("data_loading_info2", "2")), 
-              br(), br()
-            ),
-            fluidRow(
-              box(width = 12, solidHeader = TRUE, status = "primary",
-                  textInput("bookIDs", "Введите ID книг для загрузки (например, 1268, 33111, 1074):"),
-                  p("Если возникла ошибка, попробуйте сменить зеркало"),
-                  selectInput("changeMirror", "Выберите зеркало:", choices = c("http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/",
-                                                                               "http://eremita.di.uminho.pt/gutenberg/",
-                                                                               "http://mirror.csclub.uwaterloo.ca/gutenberg/",
-                                                                               "https://gutenberg.nabasny.com/",
-                                                                               "https://www.gutenberg.org/dirs/",
-                                                                               "https://mirror2.sandyriver.net/pub/gutenberg"
-                  ), 
-                  selected = "http://www.mirrorservice.org/sites/ftp.ibiblio.org/pub/docs/books/gutenberg/"),
-                  actionButton("downloadBooks", "Скачать книги"),
-                  selectInput("selectedTitle", "Выберите книгу", choices = ""), br(),
-                  DTOutput("booksTable"), br(),
-                  htmlOutput("bookText")
-              ),
-              box(
-                uiOutput("splitButtons"),
-                actionButton("splitChapters", "Разделить на главы"),
-                selectInput("selectedChapter", "Выберите главу", choices = ""),
-                htmlOutput("chapterText")
-              ), br(),
-            )
-          )
-          
-          
-          
-        }
-      })
-      
-      
-      
-      # Чтение текстовых файлов и загрузка в датафрейм
-      data <- reactive({
-        req(input$fileInput)
-        file_paths <- input$fileInput$datapath
-        filenames <- input$fileInput$name
-        lines_list <- lapply(file_paths, readLines)
-        lines_flat <- unlist(lines_list)
-        filenames_rep <- rep(filenames, lengths(lines_list))  # Создаем вектор с названиями файлов для каждой строки
-        
-        data.frame(
-          title = filenames_rep,
-          text = lines_flat,
-          stringsAsFactors = FALSE
-        )
-      })
-      
-      
-      output$contents <- renderDT({
-        datatable(as.data.frame(data()))
-      })
-      
-      
       ## ТЕКСТОВЫЕ БЛОКИ
       #блок 1
       text_data <- c(
@@ -360,21 +313,20 @@ if (interactive()) {
         return(booksData)
       })
       
-      #Обновление списка названий загруженных книг
       observe({
         req(books())
         titles <- unique(books()$title)
         updateSelectInput(session, "selectedTitle", choices = titles)
       })
       
-      #Вывод текста книги в таблицу
+      
       output$booksTable <- renderDT({
         req(books(), input$selectedTitle)
         bookSelected <- books()[books()$title == input$selectedTitle, ]
         datatable(bookSelected[, c("title", "text")], options = list(scrollX = TRUE, scrollY = "300px", pageLength = 5))
       }, server = FALSE)
       
-      #Вывод текста книги
+      
       output$bookText <- renderUI({
         req(books(), input$selectedTitle)
         bookSelected <- books()[books()$title == input$selectedTitle, ]
@@ -384,7 +336,7 @@ if (interactive()) {
         )
       })
       
-      #Создание полей ввода для резделителя глав
+
       output$splitButtons <- renderUI({
         req(input$selectedTitle)
         titles <- unique(books()$title)
@@ -397,8 +349,9 @@ if (interactive()) {
         do.call(tagList, buttons)
       })
       
-      #Разделение текста книг на главы
+      
       splitTextIntoChapters <- eventReactive(input$splitChapters, {
+        
         req(input$selectedTitle)
         titles <- unique(books()$title)
         
@@ -443,7 +396,7 @@ if (interactive()) {
         return(combined_chapters)
       }) 
       
-      #Вывод текста выбранной главы
+      
       output$chapterText <- renderUI({
         req(splitTextIntoChapters(), input$selectedChapter)
         chapterSelected <- splitTextIntoChapters()[splitTextIntoChapters()$document == input$selectedChapter, ]
@@ -453,7 +406,6 @@ if (interactive()) {
         )
       })
       
-      #Обработка кнопки "Далее"
       observeEvent(input$next1, {
         updateTabItems(session, "sidebarMenu", selected = "text_tokenization") 
       })
@@ -632,7 +584,7 @@ if (interactive()) {
         req(topTerms())
         datatable(topTerms())
       }, options = list(pageLength = 5))
-      
+
       
       output$topTermsPlot <- renderPlot({
         req(topTerms())
@@ -656,8 +608,8 @@ if (interactive()) {
         req(chaptersGamma())
         datatable(chaptersGamma())
       }, options = list(pageLength = 5))
-      
-      #график коробка с усами
+
+      #график Бокса-Вискера
       output$boxViskerPlot <- renderPlot({
         req(chaptersGamma())
         chaptersGamma() %>%
@@ -668,7 +620,7 @@ if (interactive()) {
           labs(x = "topic", y = expression(gamma))
       })
       
-      
+    
       #Найдём тему каждой главы
       chapterClassification <- reactive({
         chapter_classifications <- chaptersGamma() %>%
@@ -681,10 +633,10 @@ if (interactive()) {
         req(chapterClassification())
         datatable(chapterClassification())
       }, options = list(pageLength = 5))
+
+
       
-      
-      
-      
+  
       
       #################### ОШИБКИ ####################
       
@@ -699,7 +651,7 @@ if (interactive()) {
           transmute(consensus = title, topic)
         return(book_topics)
       })
-      
+
       
       chapterErrorClassification <- reactive({
         req(bookTopics())
@@ -713,7 +665,7 @@ if (interactive()) {
         req(chapterErrorClassification())
         datatable(chapterErrorClassification())
       }, options = list(pageLength = 5))
-      
+
       
       # Узнаем, какие слова в главах относятся к темам
       assignments <- reactive({
@@ -730,7 +682,7 @@ if (interactive()) {
         req(assignments())
         datatable(assignments())
       }, options = list(pageLength = 5))
-      
+   
       
       #Построим матрицу ошибок
       output$errorMatrix <- renderPlot({
@@ -762,15 +714,13 @@ if (interactive()) {
           arrange(desc(n))
         return(wrong_words)
       })
-      
+
       output$wrongWordsDf <- renderDT({
         req(wrongWords())
         datatable(wrongWords())
       }, options = list(pageLength = 5))
       
-      #################### Экзамен ####################
-      
-      
+ 
     }
   )
 }
