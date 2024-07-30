@@ -1,0 +1,12 @@
+name: TopicModeling
+title: TopicModeling
+username: xhurma
+account: xhurma
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12219803
+bundleId: 8775437
+url: https://xhurma.shinyapps.io/TopicModeling/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

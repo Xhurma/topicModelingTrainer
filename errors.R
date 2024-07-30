@@ -1,0 +1,131 @@
+library(shiny)
+library(shinydashboard)
+library(dplyr)
+library(ggplot2)
+
+
+errorsUI <- function(id) {
+  ns <- NS(id)
+  tagList(
+    fluidRow(
+      box(
+        title = "Инструкция",
+        status = "info",
+        solidHeader = TRUE,
+        width = 6, height = "300px",
+        HTML("<p>1. Нажмите кнопку</p>
+        <p>2. Осмотрите таблицы и графики</p>
+                      <p>3. Ознакомьтесь с информацией</p>
+                      <p>4. Можете переходить к экзамену</p>")
+      )
+    ),
+    fluidRow(
+      column(6, actionButton(ns("makeErrors"), "Показать ошибки классификации", style = "background-color: purple; color: white;"))
+      
+    ),
+    fluidRow(
+      box(title = "Неверно классифицированные главы", status = "primary", solidHeader = TRUE, collapsible = TRUE, 
+          DTOutput(ns("chapterErrorDf")),
+          HTML("<p>Если вы следуете обучающему сценарию, и выбрали число тем равное числу книг,
+                      тогда вы можете увидеть, является ли верной классификация глав к темам своей книги</p>")
+      ),
+      box(title = "Матрица ошибок классификации глав", status = "primary", solidHeader = TRUE, collapsible = TRUE, 
+          plotOutput(ns("errorMatrix")),
+          HTML("Матрица ошибок в виде тепловой карты представляет собой матрицу, 
+                             где строки соответствуют истинным классам глав книги, а столбцы - предсказанным моделью классам.
+                             ")
+      )
+    ),
+    fluidRow(
+      box(title = "Неверно классифицированные слова", status = "primary", solidHeader = TRUE, collapsible = TRUE, 
+          DTOutput(ns("wrongWordsDf")),
+          HTML("<p>В этой таблице вы можете увидеть, слова (term), которые были взяты из текста книги (title), но отнесены
+                             к тексту другой книги (predicted_title) и их количество в тексте n</p>")
+      )
+    )
+  )
+}
+
+
+errorsServer <- function(id, chapterClassification, ldaChapters, chaptersDtm) {
+  moduleServer(
+    id, 
+    function(input, output, session) {
+      
+      #Классификация целых книг по темам
+      bookTopics <- reactive({
+        req(chapterClassification(), input$makeErrors)
+        book_pred <- chapterClassification() %>%
+          group_by(title, topic) %>%
+          summarise(n = n_distinct(chapter)) %>%
+          top_n(1, n) %>%
+          ungroup() %>%
+          transmute(predicted_title = title, topic)
+        View(book_pred)
+        return(book_pred)
+      })
+      
+      #Вывод ошибок классификации глав
+      output$chapterErrorDf <- renderDT({
+        req(bookTopics, chapterClassification, input$makeErrors)
+        result <- chapterClassification() %>%
+          inner_join(bookTopics(), by = "topic") %>%
+          filter(title != predicted_title)
+        if (nrow(result) == 0) {
+          return(datatable(data.frame(Message = "Все главы классифицированы верно")))
+        } else {
+          return(datatable(result, options = list(pageLength = 5)))
+        }
+      })
+      
+      #Принадлежность слов к темам
+      assignments <- reactive({
+        req(ldaChapters, chaptersDtm, bookTopics, input$makeErrors)
+        temp <- augment(ldaChapters(), data = chaptersDtm())
+        assignments_temp <- augment(ldaChapters(), data = chaptersDtm()) %>%
+          tidyr::separate(document, c("title", "chapter"), 
+                   sep = "_", convert = TRUE) %>%
+          inner_join(bookTopics(), by = c(".topic" = "topic"))
+        return(assignments_temp)
+      })
+    
+      #Матрица ошибок
+      output$errorMatrix <- renderPlot({
+        req(assignments(), input$makeErrors)
+        assignments() %>%
+          count(title, predicted_title, wt = count) %>%
+          mutate(across(c(title, predicted_title), ~str_wrap(., 20))) %>% ##~ (тильда) обозначает начало анонимной функции.str_wrap(., 20) означает, что функция str_wrap из пакета stringr будет применена к каждому из указанных столбцов. Точка (.) внутри функции str_wrap представляет собой текущий столбец (то есть сначала title, затем predicted_title). str_wrap(., 20) означает, что строки в столбцах title и predicted_title будут "обернуты" (разбиты) на строки длиной не более 20 символов
+          group_by(title) %>%
+          mutate(percent = n / sum(n)) %>%
+          ggplot(aes(predicted_title, title, fill = percent)) +
+          geom_tile() + ##карта тепловая
+          scale_fill_gradient2(high = "darkred", label = scales::percent_format()) +
+          theme_light() +
+          theme(axis.text.x = element_text(angle = 90, hjust = 1),
+                panel.grid = element_blank()) +
+          labs(x = "К какой книге отнесены слова",
+               y = "Из какой книги взяты слова",
+               fill = "% cовпадений") 
+        
+      })
+      
+      #Список неверно классифицированных слов 
+      wrongWords <- reactive({
+        req(assignments(), input$makeErrors)
+        wrong_words <- assignments() %>%
+          filter(title != predicted_title) %>%
+          count(title, predicted_title, term, wt = count) %>%
+          ungroup() %>%
+          arrange(desc(n))
+        return(wrong_words)
+      })
+      
+      #Вывод неверно-класифицированных слов
+      output$wrongWordsDf <- renderDT({
+        req(wrongWords(), input$makeErrors)
+        datatable(wrongWords(), options = list(pageLength = 5))
+      })
+      
+    }
+  )
+}
